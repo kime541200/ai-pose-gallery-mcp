@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "ai-pose-gallery": {
+      "command": "<REPO_DIR>/.venv/bin/ai-pose-gallery-mcp",
+      "env": {
+        "GALLERY_URL": "http://127.0.0.1:8080",
+        "GALLERY_DIR": "/home/kim/workspace/local-image-gen/ai-pose-gallery-zh",
+        "COMFYUI_URL": "http://127.0.0.1:8188"
+      }
+    }
+  }
+}
