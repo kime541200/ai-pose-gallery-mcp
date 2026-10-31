@@ -1,0 +1,26 @@
+services:
+  mcp:
+    build: .
+    container_name: ai-pose-gallery-mcp
+    ports:
+      - "${PORT:-8090}:8000"
+    environment:
+      MCP_TRANSPORT: streamable-http
+      MCP_HOST: 0.0.0.0
+      MCP_PORT: 8000
+      MCP_PATH: /mcp
+      # ai-pose-gallery-zh 服務位址（依實際佈署之主機與埠號調整）
+      GALLERY_URL: ${GALLERY_URL:-http://host.docker.internal:8080}
+      # 選填：回傳給瀏覽器／使用者查看的公開網址；留空則自動由 GALLERY_URL 推導
+      GALLERY_PUBLIC_URL: ${GALLERY_PUBLIC_URL:-}
+      # ComfyUI 服務位址（依實際佈署之主機與埠號調整）
+      COMFYUI_URL: ${COMFYUI_URL:-http://host.docker.internal:8188}
+      # 選填：ComfyUI 對外圖片預覽網址；留空則自動由 COMFYUI_URL 推導
+      COMFYUI_PUBLIC_URL: ${COMFYUI_PUBLIC_URL:-}
+      WORKFLOW_DIR: /app/workflows
+      WORKFLOW_HOST_DIR: ${WORKFLOW_HOST_DIR:-./tmp}
+    volumes:
+      - ${WORKFLOW_HOST_DIR:-./tmp}:/app/workflows
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    restart: unless-stopped

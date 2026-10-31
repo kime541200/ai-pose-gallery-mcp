@@ -1,7 +1,12 @@
 from __future__ import annotations
 
+import argparse
 import json
-from typing import Any
+import os
+from typing import Any, Literal
+
+from starlette.requests import Request
+from starlette.responses import JSONResponse, Response
 
 try:
     from mcp.server.mcpserver import MCPServer as FastMCP
@@ -9,13 +14,13 @@ except ImportError:
     from mcp.server.fastmcp import FastMCP
 
 from .catalog import GalleryCatalog
-from .workflow import STYLE_PRESETS, build_recipe_prompt, prepare_workflow
+from .workflow import STYLE_PRESETS, build_recipe_prompt, execute_workflow, prepare_workflow
 
 mcp = FastMCP(
     "ai-pose-gallery",
     instructions=(
         "檢索 ai-pose-gallery-zh 三大圖庫（姿勢 / 服裝 / 人像），"
-        "協助使用者挑選參考圖並產生可供 comfyui-local 執行的 ComfyUI 多圖合成 workflow。"
+        "協助使用者挑選參考圖，並透過 ComfyUI 執行 Qwen-Image-Edit-2509 多圖角色合成生圖。"
     ),
 )
 
@@ -171,7 +176,7 @@ def prepare_comfyui_workflow(
     cfg: float = 1.0,
     seed: int | None = None,
 ) -> str:
-    """從 ai-pose-gallery 取得所選參考圖並上傳至 ComfyUI，產生可交由 comfyui-local (validate_workflow -> run_workflow) 執行的 Qwen-Image-Edit-2509 workflow JSON 檔案。"""
+    """從 ai-pose-gallery 取得所選參考圖並上傳至 ComfyUI，匯出 Qwen-Image-Edit-2509 API workflow JSON（可搭配外部 ComfyUI MCP 驗證與執行，或直接改用 generate_image 工具一步完成生圖）。"""
     res = prepare_workflow(
         catalog=_catalog,
         portrait_id=portrait_id or None,
@@ -190,8 +195,118 @@ def prepare_comfyui_workflow(
     return _dump(res)
 
 
+@mcp.tool()
+def generate_image(
+    portrait_id: str = "",
+    costume_id: str = "",
+    pose_id: str = "",
+    style_preset: str = "realistic",
+    extra_instruction: str = "",
+    custom_prompt: str = "",
+    width: int = 832,
+    height: int = 1216,
+    steps: int = 4,
+    cfg: float = 1.0,
+    seed: int | None = None,
+    timeout_sec: int = 300,
+) -> str:
+    """從 ai-pose-gallery 取得所選參考圖、上傳至 ComfyUI 並直接送出 Qwen-Image-Edit-2509 多圖合成任務，等待完成後回傳生成圖片的網址（image_url）。"""
+    prepared = prepare_workflow(
+        catalog=_catalog,
+        portrait_id=portrait_id or None,
+        costume_id=costume_id or None,
+        pose_id=pose_id or None,
+        style_preset=style_preset,
+        extra_instruction=extra_instruction,
+        custom_prompt=custom_prompt or None,
+        width=width,
+        height=height,
+        steps=steps,
+        cfg=cfg,
+        seed=seed,
+    )
+    executed = execute_workflow(
+        workflow=prepared["workflow"],
+        timeout_sec=timeout_sec,
+    )
+    return _dump(
+        {
+            "prompt_id": executed["prompt_id"],
+            "images": executed["images"],
+            "prompt": prepared["prompt"],
+            "selected": prepared["selected"],
+            "workflow_path": prepared["workflow_path"],
+        }
+    )
+
+
+@mcp.custom_route("/health", methods=["GET"], include_in_schema=False)
+async def health_check(_request: Request) -> Response:
+    return JSONResponse(
+        {
+            "status": "ok",
+            "service": "ai-pose-gallery-mcp",
+            "gallery_url": _catalog.gallery_url,
+            "comfyui_url": os.environ.get("COMFYUI_URL", "http://127.0.0.1:8188"),
+        }
+    )
+
+
 def main() -> None:
-    mcp.run(transport="stdio")
+    global _catalog
+    parser = argparse.ArgumentParser(description="ai-pose-gallery MCP server")
+    parser.add_argument(
+        "--transport",
+        choices=("stdio", "streamable-http", "sse"),
+        default=os.environ.get("MCP_TRANSPORT", "streamable-http"),
+        help="MCP transport protocol (default: streamable-http or $MCP_TRANSPORT)",
+    )
+    parser.add_argument(
+        "--host",
+        default=os.environ.get("MCP_HOST", "0.0.0.0"),
+        help="Bind host for HTTP transports (default: 0.0.0.0 or $MCP_HOST)",
+    )
+    parser.add_argument(
+        "--port",
+        type=int,
+        default=int(os.environ.get("MCP_PORT", "8000")),
+        help="Bind port for HTTP transports (default: 8000 or $MCP_PORT)",
+    )
+    parser.add_argument(
+        "--path",
+        default=os.environ.get("MCP_PATH", "/mcp"),
+        help="Streamable HTTP endpoint path (default: /mcp or $MCP_PATH)",
+    )
+    parser.add_argument(
+        "--gallery-url",
+        default=None,
+        help="ai-pose-gallery-zh backend URL (overrides $GALLERY_URL)",
+    )
+    parser.add_argument(
+        "--comfyui-url",
+        default=None,
+        help="ComfyUI server URL (overrides $COMFYUI_URL)",
+    )
+    args = parser.parse_args()
+
+    if args.gallery_url:
+        os.environ["GALLERY_URL"] = args.gallery_url
+    if args.comfyui_url:
+        os.environ["COMFYUI_URL"] = args.comfyui_url
+    _catalog = GalleryCatalog()
+
+    transport: Literal["stdio", "sse", "streamable-http"] = args.transport
+    if transport == "streamable-http":
+        mcp.run(
+            transport="streamable-http",
+            host=args.host,
+            port=args.port,
+            streamable_http_path=args.path,
+        )
+    elif transport == "sse":
+        mcp.run(transport="sse", host=args.host, port=args.port)
+    else:
+        mcp.run(transport="stdio")
 
 
 if __name__ == "__main__":

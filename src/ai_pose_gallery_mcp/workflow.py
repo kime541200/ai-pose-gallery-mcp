@@ -5,8 +5,10 @@ import io
 import json
 import os
 import random
+import time
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlencode
 
 import httpx
 from PIL import Image
@@ -372,26 +374,94 @@ def prepare_workflow(
     wf["23"]["inputs"]["steps"] = steps
     wf["23"]["inputs"]["cfg"] = cfg
 
-    default_out = (
-        Path(__file__).resolve().parents[3]
-        / "comfyui-agent"
-        / "tmp"
-        / "pose-gallery-workflow.json"
-    )
-    out_file = Path(output_path) if output_path else default_out
+    default_dir = Path(os.environ.get("WORKFLOW_DIR") or (Path.cwd() / "tmp"))
+    host_dir = Path(os.environ.get("WORKFLOW_HOST_DIR") or default_dir)
+
+    if output_path:
+        req_p = Path(output_path)
+        try:
+            rel = req_p.relative_to(host_dir)
+            out_file = default_dir / rel
+            reported_path = host_dir / rel
+        except ValueError:
+            if not req_p.is_absolute() or default_dir != host_dir:
+                out_file = default_dir / req_p.name
+                reported_path = host_dir / req_p.name
+            else:
+                out_file = req_p
+                reported_path = req_p
+    else:
+        out_file = default_dir / "pose-gallery-workflow.json"
+        reported_path = host_dir / "pose-gallery-workflow.json"
+
     out_file.parent.mkdir(parents=True, exist_ok=True)
     out_file.write_text(json.dumps(wf, ensure_ascii=False, indent=2), encoding="utf-8")
 
     return {
-        "workflow_path": str(out_file),
+        "workflow_path": str(reported_path),
         "prompt": prompt,
         "uploaded_images": uploaded_names,
         "selected": {
             k: {key: val for key, val in v.items() if key != "raw"}
             for k, v in selected_meta.items()
         },
-        "next_step": (
-            f"請使用 comfyui-local MCP 的 validate_workflow(workflow_path='{out_file}') "
-            f"驗證後，呼叫 run_workflow(workflow_path='{out_file}', wait=False) 並以 job(action='wait') 等待完成。"
-        ),
+        "workflow": wf,
     }
+
+
+def execute_workflow(
+    workflow: dict[str, Any],
+    comfyui_url: str | None = None,
+    timeout_sec: int = 300,
+) -> dict[str, Any]:
+    raw_url = (
+        comfyui_url or os.environ.get("COMFYUI_URL") or "http://127.0.0.1:8188"
+    ).rstrip("/")
+    pub_env = os.environ.get("COMFYUI_PUBLIC_URL", "").strip()
+    public_url = (
+        pub_env.rstrip("/")
+        if pub_env
+        else raw_url.replace("://host.docker.internal", "://127.0.0.1")
+    )
+
+    with httpx.Client(timeout=30.0) as client:
+        resp = client.post(f"{raw_url}/prompt", json={"prompt": workflow})
+        resp.raise_for_status()
+        prompt_id = resp.json()["prompt_id"]
+
+        deadline = time.monotonic() + timeout_sec
+        while time.monotonic() < deadline:
+            time.sleep(1.5)
+            h_resp = client.get(f"{raw_url}/history/{prompt_id}")
+            if h_resp.status_code != 200:
+                continue
+            history = h_resp.json()
+            if prompt_id not in history:
+                continue
+            entry = history[prompt_id]
+            status = entry.get("status", {})
+            if status.get("status_str") == "error":
+                raise RuntimeError(f"ComfyUI 執行失敗：{status.get('messages')}")
+            outputs = entry.get("outputs", {})
+            images: list[dict[str, str]] = []
+            for node_out in outputs.values():
+                for img in node_out.get("images", []):
+                    qs = urlencode(
+                        {
+                            "filename": img["filename"],
+                            "subfolder": img.get("subfolder", ""),
+                            "type": img.get("type", "output"),
+                        }
+                    )
+                    images.append(
+                        {
+                            "filename": img["filename"],
+                            "subfolder": img.get("subfolder", ""),
+                            "type": img.get("type", "output"),
+                            "image_url": f"{public_url}/view?{qs}",
+                        }
+                    )
+            if images:
+                return {"prompt_id": prompt_id, "images": images}
+
+    raise TimeoutError(f"ComfyUI 生圖逾時（>{timeout_sec}s），prompt_id={prompt_id}")

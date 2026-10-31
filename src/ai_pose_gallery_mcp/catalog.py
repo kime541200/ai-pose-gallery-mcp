@@ -155,12 +155,19 @@ class GalleryCatalog:
         gallery_url: str | None = None,
         gallery_dir: str | None = None,
     ) -> None:
-        self.gallery_url = (
+        raw_url = (
             gallery_url or os.environ.get("GALLERY_URL") or "http://127.0.0.1:8080"
         ).rstrip("/")
-        default_dir = Path(__file__).resolve().parents[3] / "ai-pose-gallery-zh"
-        env_dir = gallery_dir or os.environ.get("GALLERY_DIR")
-        self.gallery_dir = Path(env_dir) if env_dir else (default_dir if default_dir.is_dir() else None)
+        self.gallery_url = raw_url
+        pub_url = os.environ.get("GALLERY_PUBLIC_URL", "").strip()
+        if pub_url:
+            self.gallery_public_url = pub_url.rstrip("/")
+        else:
+            self.gallery_public_url = raw_url.replace(
+                "://host.docker.internal", "://127.0.0.1"
+            )
+        env_dir = (gallery_dir or os.environ.get("GALLERY_DIR") or "").strip()
+        self.gallery_dir = Path(env_dir) if env_dir else None
 
         self._poses: list[dict[str, Any]] | None = None
         self._costumes: list[dict[str, Any]] | None = None
@@ -219,8 +226,8 @@ class GalleryCatalog:
         out = {
             "id": item["id"],
             "kind": kind,
-            "thumb_url": f"{self.gallery_url}/{thumb.lstrip('/')}" if thumb else None,
-            "image_url": f"{self.gallery_url}/{orig.lstrip('/')}" if orig else None,
+            "thumb_url": f"{self.gallery_public_url}/{thumb.lstrip('/')}" if thumb else None,
+            "image_url": f"{self.gallery_public_url}/{orig.lstrip('/')}" if orig else None,
         }
         if self.gallery_dir and orig:
             local_p = self.gallery_dir / orig.lstrip("/")

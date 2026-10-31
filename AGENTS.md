@@ -1,6 +1,6 @@
 # ai-pose-gallery-mcp
 
-讓 Agent 經 `ai-pose-gallery` MCP 檢索 `ai-pose-gallery-zh` 的人像、服裝、姿勢素材，組出 `Qwen-Image-Edit-2509` 多圖合成 workflow，再交給 `comfyui-local` MCP（見 `../comfyui-agent/AGENTS.md`）執行生圖。MCP 無法連線或找不到圖庫時先讀 `docs/setup.md`。
+透過 `ai-pose-gallery` MCP（Streamable HTTP）檢索 [kime541200/ai-pose-gallery-zh](https://github.com/kime541200/ai-pose-gallery-zh) 的人像、服裝、姿勢素材，並呼叫 ComfyUI 執行 `Qwen-Image-Edit-2509` 多圖角色合成。若服務無法連線或回報找不到圖庫／ComfyUI，先讀 `docs/setup.md` 檢查 `.env` 的 `GALLERY_URL` 與 `COMFYUI_URL`。
 
 ## 互動與生圖流程
 
@@ -8,17 +8,19 @@
 
 1. 呼叫 `get_facets` 取得可用的體系、分類、角度、髮長與畫風預設（`style_presets`）。
 2. 依使用者描述分別呼叫 `search_portraits`、`search_costumes`、`search_poses`（各取 3–5 筆候選）。搜尋支援繁簡中文、多關鍵詞與口語同義詞。
-3. 將候選清單的名稱、ID 與圖片連結（`local_path` 或 `image_url`）列給使用者確認；必要時呼叫 `compose_recipe_prompt` 預覽合成提示詞。
+3. 將候選清單的名稱、ID 與圖片連結（`image_url`）列給使用者確認；必要時呼叫 `compose_recipe_prompt` 預覽合成提示詞。
 4. 使用者選定 ID 後，進入下方「明確需求」流程。
 
-### 2. 明確需求：直接準備 workflow 並交給 ComfyUI 生圖
+### 2. 明確需求：執行 ComfyUI 多圖合成生圖
 
-1. 呼叫 `prepare_comfyui_workflow(portrait_id, costume_id, pose_id, style_preset, ...)`：工具會自動將參考圖轉成 PNG 並上傳至 ComfyUI，寫出 workflow JSON 至 `workflow_path`（預設 `../comfyui-agent/tmp/pose-gallery-workflow.json`）。
-2. 依 `../comfyui-agent/AGENTS.md` 流程，呼叫 `comfyui-local` MCP：
-   - `validate_workflow(workflow_path=...)`（確認 `valid: true`、`error_count: 0`）
-   - `run_workflow(workflow_path=..., wait=False)` → `job(action="wait")`
+依環境選擇以下任一方式執行：
+
+- **方式 A（直接生圖，預設推薦）**：
+  直接呼叫本 MCP 的 `generate_image(portrait_id, costume_id, pose_id, style_preset, ...)`。工具會自動從 `GALLERY_URL` 取得參考圖、轉成 PNG 上傳至 `COMFYUI_URL`、送出 workflow 並等待完成，回傳生成圖片的 `image_url`。
+- **方式 B（匯出 Workflow 交由外部 ComfyUI MCP 執行）**：
+  若環境另有配置 ComfyUI 管理 MCP（如 [kime541200/comfyui-agent](https://github.com/kime541200/comfyui-agent) 的 `comfyui-local`），可呼叫 `prepare_comfyui_workflow(...)` 取得 `workflow_path`，再交由外部 MCP 驗證與執行。
 
 ## 工作流注意事項
 
-- 姿勢圖（素體白模）在 workflow 內會自動經 `DepthAnythingV2Preprocessor` → `DWPreprocessor` 轉為 OpenPose 關鍵點骨架，需要 ComfyUI 安裝 `comfyui_controlnet_aux`（對應 `comfyui-deploy` 的 `PROFILE=pose-gallery`）。
+- 姿勢圖（素體白模）在 workflow 內會自動經 `DepthAnythingV2Preprocessor` → `DWPreprocessor` 轉為 OpenPose 關鍵點骨架，ComfyUI 端須安裝 `comfyui_controlnet_aux` 與 `ComfyUI-GGUF`（見 [ai-pose-gallery-zh 的 ComfyUI 說明](https://github.com/kime541200/ai-pose-gallery-zh/blob/main/docs/comfyui.md) 或 [kime541200/comfyui-deploy](https://github.com/kime541200/comfyui-deploy) 的 `PROFILE=pose-gallery`）。
 - 預設使用 4 步 Lightning LoRA（`steps=4`、`cfg=1.0`）。
