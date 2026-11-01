@@ -120,7 +120,7 @@ WORKFLOW_TEMPLATE: dict[str, dict[str, Any]] = {
     "15": {
         "class_type": "ImageScaleToTotalPixels",
         "inputs": {
-            "image": ["17", 0],
+            "image": ["16", 0],
             "upscale_method": "lanczos",
             "megapixels": 1,
             "resolution_steps": 1,
@@ -132,19 +132,6 @@ WORKFLOW_TEMPLATE: dict[str, dict[str, Any]] = {
             "image": ["12", 0],
             "ckpt_name": "depth_anything_v2_vitl.pth",
             "resolution": 768,
-        },
-    },
-    "17": {
-        "class_type": "DWPreprocessor",
-        "inputs": {
-            "image": ["16", 0],
-            "detect_hand": "enable",
-            "detect_body": "enable",
-            "detect_face": "disable",
-            "resolution": 768,
-            "bbox_detector": "yolox_l.onnx",
-            "pose_estimator": "dw-ll_ucoco_384_bs5.torchscript.pt",
-            "scale_stick_for_xinsr_cn": "disable",
         },
     },
     "20": {
@@ -229,7 +216,7 @@ def build_recipe_prompt(
         idx += 1
     if pose:
         clauses.append(
-            f"• 【图{idx}（姿势参考）】：身体姿态与镜头透视遵循图{idx}「{pose.get('姿势名称')}」【{pose.get('角度')}】（仅参考骨架动作，忽略素体白模材质）。"
+            f"• 【图{idx}（姿势参考）】：身体姿态、四肢动作与镜头透视严格遵循图{idx}深度图「{pose.get('姿势名称')}」【{pose.get('角度')}】（仅参考图{idx}的立体姿态与空间透视，忽略黑白深度图与素体材质，还原为真实肤色与光影）。"
         )
         idx += 1
 
@@ -362,10 +349,9 @@ def prepare_workflow(
     if pose_slot_index is not None:
         pose_slot = IMAGE_SLOTS[pose_slot_index]
         wf["16"]["inputs"]["image"] = [pose_slot["load"], 0]
-        wf[pose_slot["scale"]]["inputs"]["image"] = ["17", 0]
+        wf[pose_slot["scale"]]["inputs"]["image"] = ["16", 0]
     else:
         del wf["16"]
-        del wf["17"]
 
     wf["20"]["inputs"]["prompt"] = prompt
     wf["22"]["inputs"]["width"] = width

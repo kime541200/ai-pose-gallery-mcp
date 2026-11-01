@@ -22,5 +22,5 @@
 
 ## 工作流注意事項
 
-- 姿勢圖（素體白模）在 workflow 內會自動經 `DepthAnythingV2Preprocessor` → `DWPreprocessor` 轉為 OpenPose 關鍵點骨架，ComfyUI 端須安裝 `comfyui_controlnet_aux` 與 `ComfyUI-GGUF`（見 [ai-pose-gallery-zh 的 ComfyUI 說明](https://github.com/kime541200/ai-pose-gallery-zh/blob/main/docs/comfyui.md) 或 [kime541200/comfyui-deploy](https://github.com/kime541200/comfyui-deploy) 的 `PROFILE=pose-gallery`）。
+- 姿勢圖（素體白模）在 workflow 內會自動經 `DepthAnythingV2Preprocessor` 轉為 3D 深度輪廓圖（抹除素體關節線並完整保留立體朝向、極限透視與雙人交錯結構），ComfyUI 端須安裝 `comfyui_controlnet_aux` 與 `ComfyUI-GGUF`（見 [ai-pose-gallery-zh 的 ComfyUI 說明](https://github.com/kime541200/ai-pose-gallery-zh/blob/main/docs/comfyui.md) 或 [kime541200/comfyui-deploy](https://github.com/kime541200/comfyui-deploy) 的 `PROFILE=pose-gallery`）。
 - 預設使用 4 步 Lightning LoRA（`steps=4`、`cfg=1.0`）。
