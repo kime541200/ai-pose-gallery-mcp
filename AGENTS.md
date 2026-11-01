@@ -1,6 +1,6 @@
 # ai-pose-gallery-mcp
 
-透過 `ai-pose-gallery` MCP（Streamable HTTP）檢索 [kime541200/ai-pose-gallery-zh](https://github.com/kime541200/ai-pose-gallery-zh) 的人像、服裝、姿勢素材，並呼叫 ComfyUI 執行 `Qwen-Image-Edit-2509` 多圖角色合成。若服務無法連線或回報找不到圖庫／ComfyUI，先讀 `docs/setup.md` 檢查 `.env` 的 `GALLERY_URL` 與 `COMFYUI_URL`。
+透過 `ai-pose-gallery` MCP（Streamable HTTP）檢索 [kime541200/ai-pose-gallery-zh](https://github.com/kime541200/ai-pose-gallery-zh) 的人像、服裝、姿勢素材，並呼叫 ComfyUI 執行 `FLUX 3 Image Klein Distilled`（預設）或 `Qwen-Image-Edit-2509`（備選）多圖角色合成。若服務無法連線或回報找不到圖庫／ComfyUI，先讀 `docs/setup.md` 檢查 `.env` 的 `GALLERY_URL` 與 `COMFYUI_URL`。
 
 ## 互動與生圖流程
 
@@ -22,5 +22,5 @@
 
 ## 工作流注意事項
 
-- 姿勢圖（素體白模）在 workflow 內會自動經 `DepthAnythingV2Preprocessor` 轉為 3D 深度輪廓圖（抹除素體關節線並完整保留立體朝向、極限透視與雙人交錯結構），ComfyUI 端須安裝 `comfyui_controlnet_aux` 與 `ComfyUI-GGUF`（見 [ai-pose-gallery-zh 的 ComfyUI 說明](https://github.com/kime541200/ai-pose-gallery-zh/blob/main/docs/comfyui.md) 或 [kime541200/comfyui-deploy](https://github.com/kime541200/comfyui-deploy) 的 `PROFILE=pose-gallery`）。
-- 預設使用 4 步 Lightning LoRA（`steps=4`、`cfg=1.0`）。
+- 姿勢圖（素體白模）在 workflow 內會自動經 `DepthAnythingV2Preprocessor` 轉為 3D 深度輪廓圖（抹除素體關節線並完整保留立體朝向、極限透視與雙人交錯結構），ComfyUI 端須安裝 `comfyui_controlnet_aux`（若使用 `qwen-edit` 備選引擎則另需 `ComfyUI-GGUF`，見 [ai-pose-gallery-zh 的 ComfyUI 說明](https://github.com/kime541200/ai-pose-gallery-zh/blob/main/docs/comfyui.md) 或 [kime541200/comfyui-deploy](https://github.com/kime541200/comfyui-deploy) 的 `PROFILE=pose-gallery`）。
+- 預設引擎為 `workflow_engine="flux3-klein"`（`FLUX 3 Image Klein Distilled (Int8)`，預設 `steps=16`、`cfg=1.0`）；若需切換為備選引擎可傳入 `workflow_engine="qwen-edit"`（4 步 Lightning LoRA，預設 `steps=4`、`cfg=1.0`）。

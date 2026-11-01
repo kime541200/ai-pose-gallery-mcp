@@ -3,7 +3,7 @@
 為 [kime541200/ai-pose-gallery-zh](https://github.com/kime541200/ai-pose-gallery-zh)（AI 繪畫姿勢／服裝／人像參考圖庫）提供 **Streamable HTTP MCP Server**，讓 Coding Agent 或 LLM 客戶端能：
 
 1. **模糊搜尋與互動挑選**：以自然語言（繁／簡中文、多關鍵詞、口語同義詞）檢索姿勢、服裝、人像參考圖，將候選圖片網址交由使用者確認。
-2. **ComfyUI 多圖角色合成**：將選定的人像、服裝、姿勢參考圖自動上傳至使用者的 ComfyUI，透過 **Qwen-Image-Edit-2509** 直接執行生圖（`generate_image`）或匯出 API workflow JSON（`prepare_comfyui_workflow`）。
+2. **ComfyUI 多圖角色合成**：將選定的人像、服裝、姿勢參考圖自動上傳至使用者的 ComfyUI，透過 **FLUX 3 Image Klein Distilled**（預設）或 **Qwen-Image-Edit-2509**（備選）直接執行生圖（`generate_image`）或匯出 API workflow JSON（`prepare_comfyui_workflow`）。
 
 ## 前置需求
 

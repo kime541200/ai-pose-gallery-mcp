@@ -20,7 +20,7 @@ mcp = FastMCP(
     "ai-pose-gallery",
     instructions=(
         "檢索 ai-pose-gallery-zh 三大圖庫（姿勢 / 服裝 / 人像），"
-        "協助使用者挑選參考圖，並透過 ComfyUI 執行 Qwen-Image-Edit-2509 多圖角色合成生圖。"
+        "協助使用者挑選參考圖，並透過 ComfyUI 執行 FLUX 3 Image Klein Distilled（預設）或 Qwen-Image-Edit-2509（備選）多圖角色合成生圖。"
     ),
 )
 
@@ -172,11 +172,12 @@ def prepare_comfyui_workflow(
     output_path: str = "",
     width: int = 832,
     height: int = 1216,
-    steps: int = 4,
+    steps: int | None = None,
     cfg: float = 1.0,
     seed: int | None = None,
+    workflow_engine: str = "flux3-klein",
 ) -> str:
-    """從 ai-pose-gallery 取得所選參考圖並上傳至 ComfyUI，匯出 Qwen-Image-Edit-2509 API workflow JSON（可搭配外部 ComfyUI MCP 驗證與執行，或直接改用 generate_image 工具一步完成生圖）。"""
+    """從 ai-pose-gallery 取得所選參考圖並上傳至 ComfyUI，匯出 FLUX 3 Image Klein Distilled（預設 workflow_engine='flux3-klein'，16 步）或 Qwen-Image-Edit-2509（workflow_engine='qwen-edit'，4 步）API workflow JSON。"""
     res = prepare_workflow(
         catalog=_catalog,
         portrait_id=portrait_id or None,
@@ -191,6 +192,7 @@ def prepare_comfyui_workflow(
         steps=steps,
         cfg=cfg,
         seed=seed,
+        workflow_engine=workflow_engine,
     )
     return _dump(res)
 
@@ -205,12 +207,13 @@ def generate_image(
     custom_prompt: str = "",
     width: int = 832,
     height: int = 1216,
-    steps: int = 4,
+    steps: int | None = None,
     cfg: float = 1.0,
     seed: int | None = None,
+    workflow_engine: str = "flux3-klein",
     timeout_sec: int = 300,
 ) -> str:
-    """從 ai-pose-gallery 取得所選參考圖、上傳至 ComfyUI 並直接送出 Qwen-Image-Edit-2509 多圖合成任務，等待完成後回傳生成圖片的網址（image_url）。"""
+    """從 ai-pose-gallery 取得所選參考圖、上傳至 ComfyUI 並直接送出多圖合成任務（預設 workflow_engine='flux3-klein' 使用 FLUX 3 Image Klein Distilled 16 步；可傳入 'qwen-edit' 切換為 Qwen-Image-Edit-2509 4 步），等待完成後回傳生成圖片的網址（image_url）。"""
     prepared = prepare_workflow(
         catalog=_catalog,
         portrait_id=portrait_id or None,
@@ -224,6 +227,7 @@ def generate_image(
         steps=steps,
         cfg=cfg,
         seed=seed,
+        workflow_engine=workflow_engine,
     )
     executed = execute_workflow(
         workflow=prepared["workflow"],
@@ -231,6 +235,7 @@ def generate_image(
     )
     return _dump(
         {
+            "workflow_engine": prepared["workflow_engine"],
             "prompt_id": executed["prompt_id"],
             "images": executed["images"],
             "prompt": prepared["prompt"],

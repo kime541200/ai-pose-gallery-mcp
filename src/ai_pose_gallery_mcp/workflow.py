@@ -63,7 +63,104 @@ STYLE_PRESETS: dict[str, dict[str, str]] = {
     },
 }
 
-WORKFLOW_TEMPLATE: dict[str, dict[str, Any]] = {
+FLUX3_KLEIN_TEMPLATE: dict[str, dict[str, Any]] = {
+    "1": {
+        "class_type": "UNETLoader",
+        "inputs": {
+            "unet_name": "flux3-image-klein-int8-convrot.safetensors",
+            "weight_dtype": "default",
+        },
+    },
+    "2": {
+        "class_type": "CLIPLoader",
+        "inputs": {
+            "clip_name": "qwen3vl_4b_int8_convrot.safetensors",
+            "type": "flux3",
+            "device": "default",
+        },
+    },
+    "3": {
+        "class_type": "VAELoader",
+        "inputs": {"vae_name": "flux2-vae.safetensors"},
+    },
+    "6": {
+        "class_type": "ModelSamplingFlux",
+        "inputs": {
+            "model": ["1", 0],
+            "max_shift": 2.77259,
+            "base_shift": 2.77259,
+            "width": 832,
+            "height": 1216,
+        },
+    },
+    "10": {"class_type": "LoadImage", "inputs": {"image": "image1.png"}},
+    "11": {"class_type": "LoadImage", "inputs": {"image": "image2.png"}},
+    "12": {"class_type": "LoadImage", "inputs": {"image": "image3.png"}},
+    "16": {
+        "class_type": "DepthAnythingV2Preprocessor",
+        "inputs": {
+            "image": ["12", 0],
+            "ckpt_name": "depth_anything_v2_vitl.pth",
+            "resolution": 768,
+        },
+    },
+    "20": {
+        "class_type": "CLIPTextEncode",
+        "inputs": {
+            "clip": ["2", 0],
+            "text": "",
+        },
+    },
+    "21": {
+        "class_type": "CLIPTextEncode",
+        "inputs": {
+            "clip": ["2", 0],
+            "text": "",
+        },
+    },
+    "17": {
+        "class_type": "ReferenceMultiLatent",
+        "inputs": {
+            "positive": ["20", 0],
+            "negative": ["21", 0],
+            "vae": ["3", 0],
+            "resolution": "resize",
+            "resolution.megapixels": 1.0,
+            "images.image0": ["10", 0],
+            "images.image1": ["11", 0],
+            "images.image2": ["16", 0],
+        },
+    },
+    "22": {
+        "class_type": "EmptyFlux2LatentImage",
+        "inputs": {"width": 832, "height": 1216, "batch_size": 1},
+    },
+    "23": {
+        "class_type": "KSampler",
+        "inputs": {
+            "model": ["6", 0],
+            "positive": ["17", 0],
+            "negative": ["17", 1],
+            "latent_image": ["22", 0],
+            "seed": 0,
+            "steps": 16,
+            "cfg": 1.0,
+            "sampler_name": "euler",
+            "scheduler": "simple",
+            "denoise": 1.0,
+        },
+    },
+    "24": {
+        "class_type": "VAEDecode",
+        "inputs": {"samples": ["23", 0], "vae": ["3", 0]},
+    },
+    "25": {
+        "class_type": "SaveImage",
+        "inputs": {"images": ["24", 0], "filename_prefix": "pose-gallery/mcp"},
+    },
+}
+
+QWEN_EDIT_TEMPLATE: dict[str, dict[str, Any]] = {
     "1": {
         "class_type": "UnetLoaderGGUF",
         "inputs": {"unet_name": "qwen-image-edit/Qwen-Image-Edit-2509-Q4_K_M.gguf"},
@@ -185,7 +282,15 @@ WORKFLOW_TEMPLATE: dict[str, dict[str, Any]] = {
     },
 }
 
-IMAGE_SLOTS = [
+WORKFLOW_TEMPLATE = FLUX3_KLEIN_TEMPLATE
+
+FLUX3_IMAGE_SLOTS = [
+    {"load": "10", "input": "images.image0"},
+    {"load": "11", "input": "images.image1"},
+    {"load": "12", "input": "images.image2"},
+]
+
+QWEN_IMAGE_SLOTS = [
     {"load": "10", "scale": "13", "input": "image1"},
     {"load": "11", "scale": "14", "input": "image2"},
     {"load": "12", "scale": "15", "input": "image3"},
@@ -272,13 +377,22 @@ def prepare_workflow(
     comfyui_url: str | None = None,
     width: int = 832,
     height: int = 1216,
-    steps: int = 4,
+    steps: int | None = None,
     cfg: float = 1.0,
     seed: int | None = None,
+    workflow_engine: str | None = None,
 ) -> dict[str, Any]:
     comfy_root = (
         comfyui_url or os.environ.get("COMFYUI_URL") or "http://127.0.0.1:8188"
     ).rstrip("/")
+    engine_raw = (
+        workflow_engine
+        or os.environ.get("DEFAULT_WORKFLOW_ENGINE")
+        or "flux3-klein"
+    ).strip().lower()
+    use_qwen = engine_raw in ("qwen", "qwen-edit", "qwen-image-edit-2509")
+    engine = "qwen-edit" if use_qwen else "flux3-klein"
+    resolved_steps = steps if (steps is not None and steps > 0) else (4 if use_qwen else 16)
 
     portrait_raw: dict[str, Any] | None = None
     costume_raw: dict[str, Any] | None = None
@@ -335,29 +449,51 @@ def prepare_workflow(
         if slot_kind == "pose":
             pose_slot_index = idx
 
-    wf = copy.deepcopy(WORKFLOW_TEMPLATE)
-    for i, slot in enumerate(IMAGE_SLOTS):
-        if i < len(uploaded_names):
-            wf[slot["load"]]["inputs"]["image"] = uploaded_names[i]
-            wf[slot["scale"]]["inputs"]["image"] = [slot["load"], 0]
+    if use_qwen:
+        wf = copy.deepcopy(QWEN_EDIT_TEMPLATE)
+        for i, slot in enumerate(QWEN_IMAGE_SLOTS):
+            if i < len(uploaded_names):
+                wf[slot["load"]]["inputs"]["image"] = uploaded_names[i]
+                wf[slot["scale"]]["inputs"]["image"] = [slot["load"], 0]
+            else:
+                del wf[slot["load"]]
+                del wf[slot["scale"]]
+                del wf["20"]["inputs"][slot["input"]]
+                del wf["21"]["inputs"][slot["input"]]
+
+        if pose_slot_index is not None:
+            pose_slot = QWEN_IMAGE_SLOTS[pose_slot_index]
+            wf["16"]["inputs"]["image"] = [pose_slot["load"], 0]
+            wf[pose_slot["scale"]]["inputs"]["image"] = ["16", 0]
         else:
-            del wf[slot["load"]]
-            del wf[slot["scale"]]
-            del wf["20"]["inputs"][slot["input"]]
-            del wf["21"]["inputs"][slot["input"]]
+            del wf["16"]
 
-    if pose_slot_index is not None:
-        pose_slot = IMAGE_SLOTS[pose_slot_index]
-        wf["16"]["inputs"]["image"] = [pose_slot["load"], 0]
-        wf[pose_slot["scale"]]["inputs"]["image"] = ["16", 0]
+        wf["20"]["inputs"]["prompt"] = prompt
     else:
-        del wf["16"]
+        wf = copy.deepcopy(FLUX3_KLEIN_TEMPLATE)
+        for i, slot in enumerate(FLUX3_IMAGE_SLOTS):
+            if i < len(uploaded_names):
+                wf[slot["load"]]["inputs"]["image"] = uploaded_names[i]
+                wf["17"]["inputs"][slot["input"]] = [slot["load"], 0]
+            else:
+                del wf[slot["load"]]
+                wf["17"]["inputs"].pop(slot["input"], None)
 
-    wf["20"]["inputs"]["prompt"] = prompt
+        if pose_slot_index is not None:
+            pose_slot = FLUX3_IMAGE_SLOTS[pose_slot_index]
+            wf["16"]["inputs"]["image"] = [pose_slot["load"], 0]
+            wf["17"]["inputs"][pose_slot["input"]] = ["16", 0]
+        else:
+            del wf["16"]
+
+        wf["6"]["inputs"]["width"] = width
+        wf["6"]["inputs"]["height"] = height
+        wf["20"]["inputs"]["text"] = prompt
+
     wf["22"]["inputs"]["width"] = width
     wf["22"]["inputs"]["height"] = height
     wf["23"]["inputs"]["seed"] = seed if seed is not None else random.randint(0, 2**32 - 1)
-    wf["23"]["inputs"]["steps"] = steps
+    wf["23"]["inputs"]["steps"] = resolved_steps
     wf["23"]["inputs"]["cfg"] = cfg
 
     default_dir = Path(os.environ.get("WORKFLOW_DIR") or (Path.cwd() / "tmp"))
@@ -384,6 +520,7 @@ def prepare_workflow(
     out_file.write_text(json.dumps(wf, ensure_ascii=False, indent=2), encoding="utf-8")
 
     return {
+        "workflow_engine": engine,
         "workflow_path": str(reported_path),
         "prompt": prompt,
         "uploaded_images": uploaded_names,
